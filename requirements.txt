@@ -1,0 +1,4 @@
+jupyter
+pandarallel
+chemsource
+pandas
