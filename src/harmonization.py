@@ -4,6 +4,67 @@ from ast import literal_eval
 import pandas as pd
 from preprocessing import filter_synonym_list, preprocess_chemical
 
+def harmonize_manual_classification_list(manual_classification_list):
+    manual_classification_list = manual_classification_list.strip().upper().replace("DRUG METABOLITE", "MEDICAL")
+    output = manual_classification_list.strip().upper().split(",")
+    output = [item.strip() for item in output]
+    allowed_ontology = ["MEDICAL", "PERSONAL CARE", "FOOD", "ENDOGENOUS", "INDUSTRIAL"]
+    if not set(output).issubset(set(allowed_ontology)):
+        raise ValueError(f"Invalid manual classification terms found: {set(output) - set(allowed_ontology)}")
+    return output
+
+def harmonize_drug_library_data(drug_library_data_folder, output_folder_harmonized_synonyms, output_folder_harmonized_manual):
+    """
+    Harmonizes the drug library data by reading and processing the files in the specified folder.
+
+    Parameters:
+    drug_library_data_folder (str): Path to the folder containing drug library data files.
+    output_folder_harmonized_synonyms (str): Path to the folder where harmonized synonyms will be saved.
+    output_folder_harmonized_manual (str): Path to the folder where harmonized manual classifications will be saved.
+    """
+
+    if len(os.listdir(drug_library_data_folder)) != 1:
+        raise ValueError("Expected exactly one CSV file in the drug library data folder.")
+
+    drug_library_data_path = os.path.join(drug_library_data_folder, os.listdir(drug_library_data_folder)[0])
+
+    drug_library_data = pd.read_csv(drug_library_data_path)
+    drug_library_data["FEATURE_ID"] = drug_library_data.index
+
+    drug_library_data["manual_classification"] = drug_library_data["manual_classification"].apply(harmonize_manual_classification_list)
+
+    one_hot_encoded_items = pd.get_dummies(drug_library_data['manual_classification'].apply(pd.Series).stack()).groupby(level=0).sum()
+    feature_ids = drug_library_data["FEATURE_ID"]
+
+    manual_output_harmonized = pd.concat([feature_ids, one_hot_encoded_items], axis=1)
+
+    manual_output_harmonized.to_parquet(os.path.join(output_folder_harmonized_manual, "drug_library_manual_harmonized.parquet"))
+
+
+    drug_library_data_synonyms = drug_library_data[["FEATURE_ID", "compound_name", "synonyms"]].copy()
+    drug_library_data_synonyms.rename({"compound_name": "COMPOUND_NAME", "synonyms": "SYNONYMS"}, axis=1, inplace=True)
+
+    drug_library_data_synonyms["SYNONYMS"] = drug_library_data_synonyms["SYNONYMS"].apply(lambda x :literal_eval(x) if isinstance(x, str) else x)
+    drug_library_data_synonyms["SYNONYMS"] = drug_library_data_synonyms["SYNONYMS"].apply(
+        lambda x: filter_synonym_list(x) if isinstance(x, list) else None
+    )
+    drug_library_data_synonyms["SYNONYMS"] = drug_library_data_synonyms["SYNONYMS"].apply(
+        lambda x: preprocess_chemical(x) if isinstance(x, list) else None
+    )
+    drug_library_data_synonyms["SYNONYMS"] = drug_library_data_synonyms["SYNONYMS"].apply(
+        lambda x: x if isinstance(x, list) and len(x) > 0 else None
+    )
+    if drug_library_data_synonyms["SYNONYMS"].isnull().any():
+        drug_library_data_synonyms.dropna(
+            subset=["COMPOUND_NAME", "SYNONYMS"], inplace=True, how="all"
+        )
+        mask = drug_library_data_synonyms["SYNONYMS"].isnull()
+        drug_library_data_synonyms.loc[mask, "SYNONYMS"] = drug_library_data_synonyms.loc[
+            mask, "COMPOUND_NAME"
+        ].apply(lambda x: [x])
+
+    drug_library_data_synonyms.to_parquet(os.path.join(output_folder_harmonized_synonyms, "drug_library_synonyms_harmonized.parquet"))
+
 
 def retrieve_public_data_file_paths(public_data_folder):
     """
