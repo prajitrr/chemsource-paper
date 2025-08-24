@@ -1,321 +1,209 @@
-import os
+import pandas as pd
+
 from ast import literal_eval
 
-import pandas as pd
-from preprocessing import filter_synonym_list, preprocess_chemical
+VALID_ITEMS = ["INDUSTRIAL", "PERSONAL CARE", "FOOD", "MEDICAL", "ENDOGENOUS", "INFO"]
+CLASSIFIED_COLUMNS = ["INDUSTRIAL", "PERSONAL CARE", "FOOD", "MEDICAL", "ENDOGENOUS"]
+DATASET_NAMES = {"rosmap": "brain", 
+                 "adrc": "feces",
+                 "adrc_plasma": "plasma",
+                 "dust": "dust",
+                 "food": "food",
+                 "iss": "iss",
+                 "mouse": "mouse",
+                 "personal": "pcp"
+                 }
+
+BIOSPECIMENS = ["brain", "feces", "plasma","food", "mouse"]
+SYNTHETICS = ["iss", "pcp"]
+
+def check_output_validity(input_list):
+    return all(item in VALID_ITEMS for item in input_list)
 
 def harmonize_manual_classification_list(manual_classification_list):
     manual_classification_list = manual_classification_list.strip().upper().replace("DRUG METABOLITE", "MEDICAL")
     output = manual_classification_list.strip().upper().split(",")
     output = [item.strip() for item in output]
-    allowed_ontology = ["MEDICAL", "PERSONAL CARE", "FOOD", "ENDOGENOUS", "INDUSTRIAL"]
-    if not set(output).issubset(set(allowed_ontology)):
-        raise ValueError(f"Invalid manual classification terms found: {set(output) - set(allowed_ontology)}")
+
+    if not set(output).issubset(set(CLASSIFIED_COLUMNS)):
+        raise ValueError(f"Invalid manual classification terms found: {set(output) - set(CLASSIFIED_COLUMNS)}")
     return output
 
-def harmonize_drug_library_data(drug_library_data_folder, output_folder_harmonized_synonyms, output_folder_harmonized_manual):
-    """
-    Harmonizes the drug library data by reading and processing the files in the specified folder.
+def harmonize_automated_classification_list(automated_classification_list):
+    automated_classification_list = literal_eval(automated_classification_list)
+    automated_classifications = automated_classification_list[0]
+    output = automated_classifications.strip().upper().split(",")
+    output = [item.strip() for item in output]
+    if not set(output).issubset(set(VALID_ITEMS)):
+        raise ValueError(f"Invalid automated classification terms found: {set(output) - set(VALID_ITEMS)}")
+    return output
 
-    Parameters:
-    drug_library_data_folder (str): Path to the folder containing drug library data files.
-    output_folder_harmonized_synonyms (str): Path to the folder where harmonized synonyms will be saved.
-    output_folder_harmonized_manual (str): Path to the folder where harmonized manual classifications will be saved.
-    """
+def harmonize_search_classification_list(automated_classification_list):
+    if ("Cymethion is a synonym" in automated_classification_list 
+        or "Dichlorophene is utilized in" in automated_classification_list 
+        or "Ginkgolide A is a terpenic" in automated_classification_list
+        or "Dimetridazole is a synthetic nitroimidazole" in automated_classification_list
+        or "P-nitrophenyl beta-D-glucopyranoside is primarily used" in automated_classification_list
+        or "Flacitran is a synonym for luteolin" in automated_classification_list
+        or "Glycerol 1-octadecyl ether, also known" in automated_classification_list
+        or "Sulfuric acid, also known as dihydrogen sulfate" in automated_classification_list
+        or "Methionine sulfoxide is an oxidation product of the amino" in automated_classification_list
+        or "Xanthaurine, also known as quercetin, is a flavonoid" in automated_classification_list
+        or ';' not in automated_classification_list):
+        return ["INFO"]
+    output = automated_classification_list.split(";")[0]
+    output.strip("()' ")
+    output = output.split(",")
+    output = [item.strip("()' ") for item in output]
 
-    if len(os.listdir(drug_library_data_folder)) != 1:
-        raise ValueError("Expected exactly one CSV file in the drug library data folder.")
+    if not set(output).issubset(set(VALID_ITEMS)):
+        print(automated_classification_list)
+        raise ValueError(f"Invalid automated classification terms found: {set(output) - set(VALID_ITEMS)}")
+    return output
 
-    drug_library_data_path = os.path.join(drug_library_data_folder, os.listdir(drug_library_data_folder)[0])
+def harmonize_manual_classification(classified_drug_library_data_path):
+    df = pd.read_csv(classified_drug_library_data_path)
+    df["FEATURE_ID"] = df.index
+    df = df.rename(columns={"manual_classification": "MANUAL_CLASSIFICATION"})
 
-    drug_library_data = pd.read_csv(drug_library_data_path)
-    drug_library_data["FEATURE_ID"] = drug_library_data.index
+    df["MANUAL_CLASSIFICATION"] = df["MANUAL_CLASSIFICATION"].apply(harmonize_manual_classification_list)
 
-    drug_library_data["manual_classification"] = drug_library_data["manual_classification"].apply(harmonize_manual_classification_list)
+    one_hot_encoded_items = pd.get_dummies(df['MANUAL_CLASSIFICATION'].apply(pd.Series).stack()).groupby(level=0).sum()
 
-    one_hot_encoded_items = pd.get_dummies(drug_library_data['manual_classification'].apply(pd.Series).stack()).groupby(level=0).sum()
-    feature_ids = drug_library_data["FEATURE_ID"]
+    df = pd.concat([df["FEATURE_ID"], one_hot_encoded_items], axis=1)
+    return df
 
-    manual_output_harmonized = pd.concat([feature_ids, one_hot_encoded_items], axis=1)
+def harmonize_automated_classification(classified_drug_library_data_path):
+    df = pd.read_csv(classified_drug_library_data_path)
+    df["FEATURE_ID"] = df.index
+    df = df.rename({"site": "SOURCE", "chemsource_output_deepseek-v3": "DEEPSEEK_RAG", "chemsource_output_gpt-4-1": "GPT_NO_RAG", "chemsource_output_gpt-4o": "GPT_RAG", "chemsource_output_search_gpt": "SEARCH_GPT"}, axis=1)
+    df = df[["FEATURE_ID", "SOURCE", "DEEPSEEK_RAG", "GPT_NO_RAG", "GPT_RAG", "SEARCH_GPT"]]
 
-    manual_output_harmonized.to_parquet(os.path.join(output_folder_harmonized_manual, "drug_library_manual_harmonized.parquet"))
+    df["DEEPSEEK_RAG"] = df["DEEPSEEK_RAG"].apply(harmonize_automated_classification_list)
+    df["GPT_NO_RAG"] = df["GPT_NO_RAG"].apply(harmonize_automated_classification_list)
+    df["GPT_RAG"] = df["GPT_RAG"].apply(harmonize_automated_classification_list)
+    df["SEARCH_GPT"] = df["SEARCH_GPT"].apply(harmonize_search_classification_list)
 
+    return df
 
-    drug_library_data_synonyms = drug_library_data[["FEATURE_ID", "compound_name", "synonyms"]].copy()
-    drug_library_data_synonyms.rename({"compound_name": "COMPOUND_NAME", "synonyms": "SYNONYMS"}, axis=1, inplace=True)
+def retrieve_sankey_1_data(harmonized_drug_library_df, column="GPT_RAG"):
+    df = harmonized_drug_library_df[["SOURCE", column]].copy()
+    mask = df[column].apply(lambda x: "INFO" not in x)
 
-    drug_library_data_synonyms["SYNONYMS"] = drug_library_data_synonyms["SYNONYMS"].apply(lambda x :literal_eval(x) if isinstance(x, str) else x)
-    drug_library_data_synonyms["SYNONYMS"] = drug_library_data_synonyms["SYNONYMS"].apply(
-        lambda x: filter_synonym_list(x) if isinstance(x, list) else None
-    )
-    drug_library_data_synonyms["SYNONYMS"] = drug_library_data_synonyms["SYNONYMS"].apply(
-        lambda x: preprocess_chemical(x) if isinstance(x, list) else None
-    )
-    drug_library_data_synonyms["SYNONYMS"] = drug_library_data_synonyms["SYNONYMS"].apply(
-        lambda x: x if isinstance(x, list) and len(x) > 0 else None
-    )
-    if drug_library_data_synonyms["SYNONYMS"].isnull().any():
-        drug_library_data_synonyms.dropna(
-            subset=["COMPOUND_NAME", "SYNONYMS"], inplace=True, how="all"
-        )
-        mask = drug_library_data_synonyms["SYNONYMS"].isnull()
-        drug_library_data_synonyms.loc[mask, "SYNONYMS"] = drug_library_data_synonyms.loc[
-            mask, "COMPOUND_NAME"
-        ].apply(lambda x: [x])
+    
+    cut_len = len(df) - len(df[mask])
+    df = df[mask]
+    df["CLASSIFIED"] = "chemsource Classified"
+    df["CLASS"] = df[column].apply(lambda x: "MEDICAL" if x==["MEDICAL"] else "Not MEDICAL")
+    cols = ["CLASSIFIED", "SOURCE", "CLASS"]
 
-    drug_library_data_synonyms.to_parquet(os.path.join(output_folder_harmonized_synonyms, "drug_library_synonyms_harmonized.parquet"))
+    classified_data = ["Not Classified"] * (cut_len)
+    source_data = ["N/A"] * ( cut_len)
+    class_data = ["N/A "] * (cut_len)
 
+    # create new df with same cols and 800 entries
+    new_df = pd.DataFrame(columns=cols)
 
-def retrieve_public_data_file_paths(public_data_folder):
-    """
-    Retrieves the paths of public data files from the specified folder.
+    new_df["CLASSIFIED"] = classified_data
+    new_df["SOURCE"] = source_data
+    new_df["CLASS"] = class_data
 
-    Parameters:
-    public_data_folder (str): Path to the folder containing public data files.
+    df = pd.concat([df, new_df])
+    df = df[["CLASSIFIED", "SOURCE", "CLASS"]]
+    return df
 
-    Returns:
-    tuple: A tuple containing dataframes for synonyms and detection frequencies.
-    """
+def retrieve_sankey_2_data(harmonized_drug_library_df, harmonized_manual_df, column="GPT_RAG"):
+    df = harmonized_drug_library_df[["FEATURE_ID", "SOURCE", column]].copy()
 
-    for file in os.listdir(public_data_folder):
-        if "synonyms" in file:
-            public_synonyms_path = os.path.join(public_data_folder, file)
-        elif "detection" in file:
-            public_detection_frequencies_path = os.path.join(public_data_folder, file)
-        else:
-            raise ValueError(f"Unexpected file in public data folder: {file}")
+    automated_classifications = pd.get_dummies(harmonized_drug_library_df[column].apply(pd.Series).stack()).groupby(level=0).sum()
+    automated_classifications = automated_classifications[automated_classifications["INFO"] != 1]
+    
+    automated_classifications.drop(columns=["INFO"], inplace=True)
+    harmonized_manual_df.drop(columns=["FEATURE_ID"], inplace=True)
+    harmonized_manual_df = harmonized_manual_df.loc[automated_classifications.index, :]
 
-    if public_synonyms_path and public_detection_frequencies_path:
-        if "tsv" in public_synonyms_path:
-            public_synonyms_df = pd.read_csv(public_synonyms_path, sep="\t")
-        else:
-            public_synonyms_df = pd.read_csv(public_synonyms_path)
-
-        if "tsv" in public_detection_frequencies_path:
-            public_detection_frequencies_df = pd.read_csv(
-                public_detection_frequencies_path, sep="\t"
-            )
-        else:
-            public_detection_frequencies_df = pd.read_csv(
-                public_detection_frequencies_path
-            )
-
-        return public_synonyms_df, public_detection_frequencies_df
-
-    return None, None
-
-def harmonize_brain_data(brain_folder):
-    """
-    Harmonizes the ROSMAP brain dataset by reading and processing the files in the specified folder.
-
-    Parameters:
-    brain_folder (str): Path to the folder containing ROSMAP brain data files.
-
-    Returns:
-    pd.DataFrame: A DataFrame containing the harmonized data.
-    """
-    synonyms, detection_frequencies = retrieve_public_data_file_paths(brain_folder)
-
-    corresponding_synonyms = []
-    for index, row in detection_frequencies.iterrows():
-        if row["compound_name"] != row["Compound_Name"]:
-            raise ValueError("Compound name mismatch")
-        compound_name = row["compound_name"]
-
-        for _, synonym_row in synonyms.iterrows():
-            if compound_name.casefold() in synonym_row["synonyms"].casefold():
-                corresponding_synonyms.append(synonym_row["synonyms"])
-                break
-        else:
-            corresponding_synonyms.append(None)
-
-    detection_frequencies["synonyms"] = corresponding_synonyms
-    detection_frequencies["synonyms"] = detection_frequencies["synonyms"].apply(
-        literal_eval
-    )
-
-    detection_frequencies = detection_frequencies[
-        ["featureID", "compound_name", "synonyms", "DF"]
-    ]
-    detection_frequencies = detection_frequencies.rename(
-        columns={
-            "DF": "DETECTION_FREQUENCY",
-            "synonyms": "SYNONYMS",
-            "compound_name": "COMPOUND_NAME",
-            "featureID": "FEATURE_ID",
-        }
-    )
-
-    detection_frequencies = detection_frequencies.groupby(
-        "FEATURE_ID", as_index=False
-    ).agg({"COMPOUND_NAME": "first", "SYNONYMS": "sum", "DETECTION_FREQUENCY": "first"})
-
-    detection_frequencies["SYNONYMS"] = detection_frequencies["SYNONYMS"].apply(
-        lambda x: list(dict.fromkeys(x))
-    )
-    detection_frequencies["DETECTION_FREQUENCY"] = detection_frequencies["DETECTION_FREQUENCY"].astype(float)
-    return detection_frequencies
+    is_medical_automated = automated_classifications.apply(lambda x: "MEDICAL" if x["MEDICAL"] == 1 and x.sum() <= 1 else "Not MEDICAL", axis =1)
+    is_medical_manual = harmonized_manual_df.apply(lambda x: "MEDICAL " if x["MEDICAL"] == 1 and x.sum() <= 1 else "Not MEDICAL ", axis=1)
 
 
-def harmonize_split_public_data(public_data_folder):
-    """
-        Harmonizes the split public dataset by reading and processing the files in the specified folder.
+    # not_medical_automated = automated_classifications[(automated_classifications["MEDICAL"] == 0) |(automated_classifications.sum(axis=1) > 1)]
+    # not_medical_automated = not_medical_automated.drop(columns=["MEDICAL"])
+    # not_medical_automated = not_medical_automated[not_medical_automated.sum(axis=1) > 0]
 
-        Parameters:
-        public_data_folder (str): Path to the folder containing public data files.
-    s
-        Returns:
-        pd.DataFrame: A DataFrame containing the harmonized data.
-    """
-    synonyms, detection_frequencies = retrieve_public_data_file_paths(
-        public_data_folder
-    )
+    not_medical_manual = harmonized_manual_df[(harmonized_manual_df["MEDICAL"] == 0) |(harmonized_manual_df.sum(axis=1) > 1)]
+    not_medical_manual = not_medical_manual.drop(columns=["MEDICAL"])
+    not_medical_manual = not_medical_manual[not_medical_manual.sum(axis=1) > 0]
 
-    synonyms = synonyms.dropna(subset=["X.Scan."])
-    synonyms_dict = dict(
-        zip(synonyms["X.Scan."].astype(int), synonyms["synonyms"].apply(literal_eval))
-    )
-    detection_frequencies["synonyms"] = detection_frequencies["featureID"].map(
-        synonyms_dict
-    )
+    shared_indices = automated_classifications.index.intersection(not_medical_manual.index)
+    summed_classifications = automated_classifications.drop(columns=["MEDICAL"]).loc[shared_indices, :] + not_medical_manual.loc[shared_indices, :]
+    summed_classifications = summed_classifications.map(lambda x: True if x==0 or x== 2 else False)
+    row_sums = summed_classifications.sum(axis=1)
 
-    detection_frequencies = detection_frequencies[
-        ["featureID", "compound_name", "synonyms", "DF"]
-    ]
-    detection_frequencies = detection_frequencies.rename(
-        columns={
-            "DF": "DETECTION_FREQUENCY",
-            "synonyms": "SYNONYMS",
-            "compound_name": "COMPOUND_NAME",
-            "featureID": "FEATURE_ID",
-        }
-    )
+    matched_categories = row_sums.apply(lambda x: "Four categories" if x==4 else("Three categories" if x==3 else "Other"))
 
-    detection_frequencies["SYNONYMS"] = detection_frequencies["SYNONYMS"].apply(
-        lambda x: filter_synonym_list(x) if isinstance(x, list) else None
-    )
-    detection_frequencies["SYNONYMS"] = detection_frequencies["SYNONYMS"].apply(
-        lambda x: preprocess_chemical(x) if isinstance(x, list) else None
-    )
-    detection_frequencies["SYNONYMS"] = detection_frequencies["SYNONYMS"].apply(
-        lambda x: x if isinstance(x, list) and len(x) > 0 else None
-    )
+    final_output = pd.DataFrame(columns=["chemsource Class", "Manual Class", "Match Count"])
+    final_output["chemsource Class"] = is_medical_automated
+    final_output["Manual Class"] = is_medical_manual
+    final_output["Match Count"] = matched_categories
+    final_output["Match Count"] = final_output["Match Count"].where(final_output["chemsource Class"] == "Not MEDICAL", other="N/A")
+    final_output.fillna({"Match Count": "N/A"}, inplace=True)
 
-    if detection_frequencies["SYNONYMS"].isnull().any():
-        detection_frequencies.dropna(
-            subset=["COMPOUND_NAME", "SYNONYMS"], inplace=True, how="all"
-        )
-        mask = detection_frequencies["SYNONYMS"].isnull()
-        detection_frequencies.loc[mask, "SYNONYMS"] = detection_frequencies.loc[
-            mask, "COMPOUND_NAME"
-        ].apply(lambda x: [x])
+    return final_output
 
-    detection_frequencies = detection_frequencies.groupby(
-        "FEATURE_ID", as_index=False
-    ).agg({"COMPOUND_NAME": "first", "SYNONYMS": "sum", "DETECTION_FREQUENCY": "first"})
+def check_output_validity(input_list):
+    return all(item in VALID_ITEMS for item in input_list)
 
-    detection_frequencies["SYNONYMS"] = detection_frequencies["SYNONYMS"].apply(
-        lambda x: list(dict.fromkeys(x))
-    )
+def harmonize_classified_public_data(classified_public_data_path):
+    df = pd.read_csv(classified_public_data_path)
+    df = df.drop(columns=["X.Scan.", "synonyms", "text", "name_used", "chemsource_output_gpt-4o","chemsource_output_gpt-4o_classprobs","site","synonyms_lower"])
 
-    detection_frequencies["DETECTION_FREQUENCY"] = detection_frequencies["DETECTION_FREQUENCY"].astype(float)
+    df.rename(columns={"DF": "DETECTION_FREQUENCY", "chemsource_output_gpt-4o_classification": "CLASSIFICATION", "dataset": "DATASET"}, inplace=True)
+    df["CLASSIFICATION"] = df["CLASSIFICATION"].apply(lambda x: x.strip().split(',') if isinstance(x, str) else [])
+    df["CLASSIFICATION"] = df["CLASSIFICATION"].apply(lambda x: [item.strip() for item in x])
 
-    return detection_frequencies
+    df["DATASET"] = df["DATASET"].apply(lambda x: DATASET_NAMES.get(x, x))
+
+    # Check validity
+    valid = df["CLASSIFICATION"].apply(check_output_validity)
+    if not valid.all():
+        raise ValueError("Invalid classification found in the dataset.")
 
 
-def harmonize_combined_public_dataset(public_data_folder):
-    """
-    Harmonizes the combined public dataset by reading and processing the file in the specified folder.
+    one_hot_encoded_items = pd.get_dummies(df['CLASSIFICATION'].apply(pd.Series).stack()).groupby(level=0).sum()
 
-    Parameters:
-    public_data_folder (str): Path to the folder containing public data file.
+    df_encoded = pd.concat([one_hot_encoded_items, df["DETECTION_FREQUENCY"], df["DATASET"]], axis=1)
 
-    Returns:
-    pd.DataFrame: A DataFrame containing the harmonized data.
-    """
-    data_files = os.listdir(public_data_folder)
-    if len(data_files) != 1:
-        raise ValueError("Expected exactly one file in the public data folder.")
-    data_file_path = os.path.join(public_data_folder, data_files[0])
-    if "tsv" in data_file_path:
-        public_data_df = pd.read_csv(data_file_path, sep="\t")
-    else:
-        public_data_df = pd.read_csv(data_file_path)
+    df_encoded = df_encoded[df_encoded["INFO"] == 0]
+    df_encoded.drop(columns=["INFO"], inplace=True)
 
-    public_data_df = public_data_df[["featureID", "compound_name", "synonyms", "DF"]]
-    public_data_df = public_data_df.rename(
-        columns={
-            "DF": "DETECTION_FREQUENCY",
-            "synonyms": "SYNONYMS",
-            "compound_name": "COMPOUND_NAME",
-            "featureID": "FEATURE_ID",
-        }
-    )
-    public_data_df["SYNONYMS"] = public_data_df["SYNONYMS"].apply(literal_eval)
-    public_data_df["SYNONYMS"] = public_data_df["SYNONYMS"].apply(
-        lambda x: filter_synonym_list(x) if isinstance(x, list) else None
-    )
-    public_data_df["SYNONYMS"] = public_data_df["SYNONYMS"].apply(
-        lambda x: preprocess_chemical(x) if isinstance(x, list) else None
-    )
-    public_data_df["SYNONYMS"] = public_data_df["SYNONYMS"].apply(
-        lambda x: x if isinstance(x, list) and len(x) > 0 else None
-    )
-    if public_data_df["SYNONYMS"].isnull().any():
-        public_data_df.dropna(
-            subset=["COMPOUND_NAME", "SYNONYMS"], inplace=True, how="all"
-        )
-        mask = public_data_df["SYNONYMS"].isnull()
-        public_data_df.loc[mask, "SYNONYMS"] = public_data_df.loc[
-            mask, "COMPOUND_NAME"
-        ].apply(lambda x: [x])
+    
 
-    public_data_df = public_data_df.groupby("FEATURE_ID", as_index=False).agg(
-        {"COMPOUND_NAME": "first", "SYNONYMS": "sum", "DETECTION_FREQUENCY": "first"}
-    )
+    return df_encoded
 
-    public_data_df["SYNONYMS"] = public_data_df["SYNONYMS"].apply(
-        lambda x: list(dict.fromkeys(x))
-    )
+def aggregate_public_data(harmonized_data):
+    df_encoded = harmonized_data.copy()
+    df_encoded[CLASSIFIED_COLUMNS] = df_encoded[CLASSIFIED_COLUMNS].multiply(df_encoded["DETECTION_FREQUENCY"], axis=0)
+    df_encoded.drop(columns=["DETECTION_FREQUENCY"], inplace=True)
+    df_dataset_groups = df_encoded.groupby("DATASET").aggregate('sum')
+    df_dataset_groups = df_dataset_groups.div(df_dataset_groups.sum(axis=1), axis=0)
+    return df_dataset_groups
 
-    public_data_df["DETECTION_FREQUENCY"] = public_data_df["DETECTION_FREQUENCY"].astype(float)
+def refinement_function(df_row):
+    if df_row["DATASET"] in BIOSPECIMENS:
+        if df_row["FOOD"] == 1 or df_row["ENDOGENOUS"] == 1:
+            df_row[["INDUSTRIAL", "PERSONAL CARE", "MEDICAL"]] = 0
+    elif df_row["DATASET"] in SYNTHETICS:
+        if df_row["INDUSTRIAL"] == 1 or df_row["PERSONAL CARE"] == 1:
+            df_row[["FOOD", "ENDOGENOUS", "MEDICAL"]] = 0
+    return df_row
 
-    return public_data_df
+def aggregate_and_refine_public_data(harmonized_data):
+    df_encoded = harmonized_data.copy()
 
-def harmonize_all_public_data(public_data_folder, output_folder):
-    """
-    Harmonizes all public datasets by reading and processing the files in the specified folder.
+    df_encoded = df_encoded.apply(refinement_function, axis=1)
 
-    Parameters:
-    public_data_folder (str): Path to the folder containing public data files.
-
-    Returns:
-    None
-    """
-
-    split_datasets = ["dust", "feces", "iss", "mouse", "plasma"]
-    combined_datasets = ["food", "pcp"]
-
-    all_datasets = split_datasets + combined_datasets + ["brain"]
-    for dir in os.listdir(public_data_folder):
-        dir_path = os.path.join(public_data_folder, dir)
-        if os.path.isdir(dir_path):
-            if "brain" in dir:
-                harmonized_data = harmonize_brain_data(dir_path)
-            elif any(item in dir for item in split_datasets):
-                harmonized_data = harmonize_split_public_data(dir_path)
-            elif any(item in dir for item in combined_datasets):
-                harmonized_data = harmonize_combined_public_dataset(dir_path)
-            else:
-                raise ValueError(f"Unexpected directory: {dir}")
-
-            dataset_name = [dataset for dataset in all_datasets if dataset in dir]
-
-            if len(dataset_name) != 1:
-                raise ValueError(f"Multiple or no dataset names found in {dir}")
-            
-            dataset_name = dataset_name[0]
-            output_file = os.path.join(output_folder, f"{dataset_name}_harmonized.parquet")
-
-            harmonized_data.to_parquet(output_file, index=False)
-            print(f"Harmonized data for {dataset_name} saved to {output_file}")
+    df_encoded[CLASSIFIED_COLUMNS] = df_encoded[CLASSIFIED_COLUMNS].multiply(df_encoded["DETECTION_FREQUENCY"], axis=0)
+    df_encoded.drop(columns=["DETECTION_FREQUENCY"], inplace=True)
+    df_dataset_groups = df_encoded.groupby("DATASET").aggregate('sum')
+    df_dataset_groups = df_dataset_groups.div(df_dataset_groups.sum(axis=1), axis=0)
+    return df_dataset_groups
