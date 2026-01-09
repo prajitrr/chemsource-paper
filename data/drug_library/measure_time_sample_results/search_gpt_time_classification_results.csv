@@ -1,0 +1,118 @@
+,0
+0,MEDICAL
+1,MEDICAL
+2,MEDICAL
+3,MEDICAL
+4,INFO
+5,MEDICAL
+6,"MEDICAL, FOOD, PERSONAL CARE"
+7,INFO
+8,MEDICAL
+9,MEDICAL
+10,MEDICAL
+11,MEDICAL
+12,INFO
+13,MEDICAL
+14,MEDICAL
+15,MEDICAL
+16,MEDICAL
+17,FOOD
+18,MEDICAL
+19,ENDOGENOUS
+20,MEDICAL
+21,MEDICAL
+22,MEDICAL
+23,PERSONAL CARE
+24,MEDICAL
+25,INFO
+26,ENDOGENOUS
+27,ENDOGENOUS
+28,MEDICAL
+29,MEDICAL
+30,MEDICAL
+31,"FOOD, INDUSTRIAL"
+32,"Based solely on the provided information about Sulfenax mor, I cannot determine its nature or use. Additional information is needed.
+
+INFO"
+33,"MEDICAL, INDUSTRIAL"
+34,MEDICAL
+35,INFO
+36,MEDICAL
+37,MEDICAL
+38,MEDICAL
+39,MEDICAL
+40,"MEDICAL, FOOD"
+41,"INFO
+
+"
+42,INFO
+43,"ENDOGENOUS, INDUSTRIAL"
+44,MEDICAL
+45,INFO
+46,MEDICAL
+47,MEDICAL
+48,"MEDICAL, INDUSTRIAL"
+49,MEDICAL
+50,INFO
+51,"MEDICAL, ENDOGENOUS"
+52,MEDICAL
+53,INFO
+54,MEDICAL
+55,MEDICAL
+56,"Based solely on the information you provided about Isoliquiritigenin:
+
+- It is found in licorice (a natural food item) (“found in licorice”) — that corresponds to the FOOD category.
+- No indication it is produced by the human body (ENDOGENOUS).
+- It is not described as an approved medication or in late‑stage human clinical use (MEDICAL).
+- While it has pharmacological properties, there’s no mention of its use in personal care or cosmetics in the provided information (PERSONAL CARE).
+- It is not described as a synthetic industrial compound (INDUSTRIAL).
+
+Therefore, with the information given, the appropriate classification is:
+
+FOOD"
+57,MEDICAL
+58,MEDICAL
+59,MEDICAL
+60,MEDICAL
+61,MEDICAL
+62,MEDICAL
+63,"FOOD, INDUSTRIAL"
+64,MEDICAL
+65,MEDICAL
+66,MEDICAL
+67,MEDICAL
+68,MEDICAL
+69,MEDICAL
+70,MEDICAL
+71,INFO
+72,MEDICAL
+73,MEDICAL
+74,MEDICAL
+75,INFO
+76,MEDICAL
+77,MEDICAL
+78,INFO
+79,MEDICAL
+80,MEDICAL
+81,MEDICAL
+82,MEDICAL
+83,MEDICAL
+84,INFO
+85,"ENDOGENOUS, FOOD"
+86,MEDICAL
+87,MEDICAL
+88,"Based solely on the provided information about Isotharine mesylate (isoetharine mesylate):
+
+Classification: MEDICAL."
+89,ENDOGENOUS
+90,"FOOD, PERSONAL CARE"
+91,"FOOD, PERSONAL CARE"
+92,MEDICAL
+93,"FOOD, PERSONAL CARE, INDUSTRIAL"
+94,MEDICAL
+95,MEDICAL
+96,MEDICAL
+97,MEDICAL
+98,MEDICAL
+99,MEDICAL
+100,[26.595775332985795]

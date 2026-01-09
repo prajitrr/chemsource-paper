@@ -10,15 +10,17 @@ import matplotlib.pyplot as plt
 METHODS = ["GPT_RAG", "DEEPSEEK_RAG", "GPT_NO_RAG", "SEARCH_GPT"]
 CLASSIFIED_COLUMNS = ["INDUSTRIAL", "ENDOGENOUS", "FOOD", "PERSONAL CARE", "MEDICAL"]
 
-def compute_metrics_single_method(harmonized_data, manual_data, method_column):
+def compute_metrics_single_method(harmonized_data, manual_data, method_column,
+                                  harmonized_columns=["MEDICAL", "ENDOGENOUS", "FOOD", "PERSONAL CARE", "INDUSTRIAL"],
+                                  manual_columns=["MEDICAL", "ENDOGENOUS", "FOOD", "PERSONAL CARE", "INDUSTRIAL"]):
     harmonized_data = pd.get_dummies(harmonized_data[method_column].apply(pd.Series).stack()).groupby(level=0).sum()
     harmonized_data = harmonized_data[harmonized_data["INFO"] == 0]
     harmonized_data.drop(columns=["INFO"], inplace=True)
 
     manual_data = manual_data.loc[harmonized_data.index]
 
-    harmonized_data = harmonized_data[["MEDICAL", "ENDOGENOUS", "FOOD", "PERSONAL CARE", "INDUSTRIAL"]]
-    manual_data = manual_data[["MEDICAL", "ENDOGENOUS", "FOOD", "PERSONAL CARE", "INDUSTRIAL"]]
+    harmonized_data = harmonized_data[harmonized_columns]
+    manual_data = manual_data[manual_columns]
     sum = harmonized_data +  2 * manual_data
 
     # TN = 0, FP = 1, FN = 2, TP = 3
